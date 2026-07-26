@@ -1,4 +1,4 @@
-import { type Component, CURSOR_MARKER } from "@earendil-works/pi-tui";
+import { type Component, CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, test } from "vitest";
 import { InteractiveViewport } from "../src/modes/interactive/components/interactive-viewport.ts";
 
@@ -170,11 +170,133 @@ describe("InteractiveViewport", () => {
 		expect(viewport.getRange().start).toBe(120);
 	});
 
-	test("omits a Kitty image block that crosses the viewport boundary", () => {
-		const kittyImage = "\x1b_Gr=3,i=7;payload\x1b\\";
+	test("shifts a paused page so a Kitty image remains reachable", () => {
+		const kittyImage = "\x1b_Gr=4,i=7;payload\x1b\\";
+		const viewport = new InteractiveViewport(() => 8, {
+			header: new LinesComponent(["header"]),
+			transcript: new LinesComponent(["before 1", "before 2", kittyImage, "", "", "", "after"]),
+			bottom: new LinesComponent(["editor", "footer"]),
+		});
+
+		viewport.render(80);
+		viewport.home();
+		const homeLines = viewport.render(80);
+		viewport.pageDown();
+		const imageLines = viewport.render(80);
+		viewport.pageUp();
+		const returnedHomeLines = viewport.render(80);
+
+		expect(homeLines).toContain("before 1");
+		expect(imageLines.some((line) => line.includes("\x1b_G"))).toBe(true);
+		expect(returnedHomeLines).toContain("before 1");
+		expect(viewport.getRange().start).toBe(0);
+	});
+
+	test("can page past an image that fills the transcript viewport", () => {
+		const kittyImage = "\x1b_Gr=4,i=7;payload\x1b\\";
+		const viewport = new InteractiveViewport(() => 7, {
+			header: new LinesComponent(["header"]),
+			transcript: new LinesComponent(["before", kittyImage, "", "", "", "after 1", "after 2", "after 3"]),
+			bottom: new LinesComponent(["editor", "footer"]),
+		});
+
+		viewport.render(80);
+		viewport.home();
+		viewport.render(80);
+		viewport.pageDown();
+		expect(viewport.render(80).some((line) => line.includes("\x1b_G"))).toBe(true);
+		viewport.pageDown();
+		const tailLines = viewport.render(80);
+		viewport.pageDown();
+		viewport.render(80);
+
+		expect(tailLines).toContain("after 3");
+		expect(viewport.getRange().state.followTail).toBe(true);
+	});
+
+	test("does not skip ordinary lines after an image-aligned page", () => {
+		const kittyImage = "\x1b_Gr=2,i=7;payload\x1b\\";
 		const viewport = new InteractiveViewport(() => 6, {
 			header: new LinesComponent(["header"]),
-			transcript: new LinesComponent(["before", kittyImage, "", "", "after"]),
+			transcript: new LinesComponent(["L0", kittyImage, "", "L3", "L4", "L5", "L6"]),
+			bottom: new LinesComponent(["editor", "footer"]),
+		});
+
+		viewport.render(80);
+		viewport.home();
+		expect(viewport.render(80)).toContain("L0");
+		viewport.pageDown();
+		const nextPage = viewport.render(80);
+
+		expect(nextPage).toContain("L3");
+	});
+
+	test("keeps fitting images and ordinary lines reachable across page layouts", () => {
+		for (let viewportRows = 2; viewportRows <= 6; viewportRows += 1) {
+			for (let imageRows = 2; imageRows <= viewportRows; imageRows += 1) {
+				for (let beforeCount = 0; beforeCount <= 4; beforeCount += 1) {
+					for (let afterCount = 0; afterCount <= 4; afterCount += 1) {
+						const before = Array.from({ length: beforeCount }, (_, index) => `before ${index}`);
+						const after = Array.from({ length: afterCount }, (_, index) => `after ${index}`);
+						const kittyImage = `\x1b_Gr=${imageRows},i=7;payload\x1b\\`;
+						const transcriptLines = [
+							...before,
+							kittyImage,
+							...Array.from({ length: imageRows - 1 }, () => ""),
+							...after,
+						];
+						const viewport = new InteractiveViewport(() => viewportRows + 3, {
+							header: new LinesComponent(["header"]),
+							transcript: new LinesComponent(transcriptLines),
+							bottom: new LinesComponent(["editor", "footer"]),
+						});
+						const forwardLines = new Set<string>();
+						let sawForwardImage = false;
+
+						viewport.render(80);
+						viewport.home();
+						for (let step = 0; step <= transcriptLines.length + 1; step += 1) {
+							const frame = viewport.render(80);
+							for (const line of frame) forwardLines.add(line);
+							sawForwardImage ||= frame.some((line) => line.includes("\x1b_G"));
+							if (viewport.getRange().state.followTail) break;
+							viewport.pageDown();
+						}
+
+						const reverseLines = new Set<string>();
+						let sawReverseImage = false;
+						viewport.end();
+						for (let step = 0; step <= transcriptLines.length + 1; step += 1) {
+							const frame = viewport.render(80);
+							for (const line of frame) reverseLines.add(line);
+							sawReverseImage ||= frame.some((line) => line.includes("\x1b_G"));
+							if (!viewport.getRange().state.followTail && viewport.getRange().start === 0) break;
+							viewport.pageUp();
+						}
+
+						for (const line of [...before, ...after]) {
+							expect(
+								forwardLines,
+								`${viewportRows}/${imageRows}/${beforeCount}/${afterCount} forward`,
+							).toContain(line);
+							expect(
+								reverseLines,
+								`${viewportRows}/${imageRows}/${beforeCount}/${afterCount} reverse`,
+							).toContain(line);
+						}
+						expect(sawForwardImage).toBe(true);
+						expect(sawReverseImage).toBe(true);
+					}
+				}
+			}
+		}
+	});
+
+	test("shows a placeholder when an image is taller than the transcript viewport", () => {
+		const kittyImage = "\x1b_Gr=6,i=7;payload\x1b\\";
+		const viewport = new InteractiveViewport(() => 7, {
+			header: new LinesComponent(["header"]),
+			transcript: new LinesComponent(["before", kittyImage, "", "", "", "", "", "after"]),
 			bottom: new LinesComponent(["editor", "footer"]),
 		});
 
@@ -183,10 +305,13 @@ describe("InteractiveViewport", () => {
 		const lines = viewport.render(80);
 
 		expect(lines.some((line) => line.includes("\x1b_G"))).toBe(false);
-		expect(lines).toContain("before");
+		expect(lines).toContain("[image is taller than the transcript viewport]");
+		const narrowPlaceholder = viewport.render(20).find((line) => line.startsWith("[image"));
+		expect(narrowPlaceholder).toBeDefined();
+		expect(visibleWidth(narrowPlaceholder!)).toBeLessThanOrEqual(20);
 	});
 
-	test("omits an iTerm image block when its reserved rows are clipped", () => {
+	test("shifts a paused page so iTerm reserved rows remain intact", () => {
 		const itermImage = "\x1b[2A\x1b]1337;File=inline=1:payload\x07";
 		const viewport = new InteractiveViewport(() => 6, {
 			header: new LinesComponent(["header"]),
@@ -198,9 +323,29 @@ describe("InteractiveViewport", () => {
 		viewport.home();
 		viewport.pageDown();
 		const lines = viewport.render(80);
+		const imageIndex = lines.findIndex((line) => line.includes("1337;File="));
 
-		expect(lines.some((line) => line.includes("1337;File="))).toBe(false);
-		expect(lines).toContain("after");
+		expect(imageIndex).toBeGreaterThan(1);
+		expect(lines.slice(imageIndex - 2, imageIndex)).toEqual(["", ""]);
+	});
+
+	test("places the paused-scroll indicator outside iTerm reserved rows", () => {
+		const itermImage = "\x1b[2A\x1b]1337;File=inline=1:payload\x07";
+		const viewport = new InteractiveViewport(() => 8, {
+			header: new LinesComponent(["header"]),
+			transcript: new LinesComponent(["", "", itermImage, "after 1", "after 2", "after 3"]),
+			bottom: new LinesComponent(["editor", "footer"]),
+			renderScrollIndicator: (line) => `<UP>${line}`,
+		});
+
+		viewport.render(80);
+		viewport.home();
+		const lines = viewport.render(80);
+		const imageIndex = lines.findIndex((line) => line.includes("1337;File="));
+
+		expect(imageIndex).toBeGreaterThan(1);
+		expect(lines.slice(imageIndex - 2, imageIndex + 1).some((line) => line.includes("<UP>"))).toBe(false);
+		expect(lines).toContain("<UP>after 1");
 	});
 
 	test("retains the focused editor cursor when bottom chrome exceeds terminal height", () => {

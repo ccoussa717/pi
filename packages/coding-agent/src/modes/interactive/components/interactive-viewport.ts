@@ -1,4 +1,4 @@
-import { type Component, CURSOR_MARKER } from "@earendil-works/pi-tui";
+import { type Component, CURSOR_MARKER, truncateToWidth } from "@earendil-works/pi-tui";
 import {
 	INITIAL_TRANSCRIPT_VIEWPORT_STATE,
 	moveTranscriptViewport,
@@ -20,9 +20,15 @@ interface ProtectedLineSpan {
 	end: number;
 }
 
+interface SlicedTranscript {
+	lines: string[];
+	protectedRows: Set<number>;
+}
+
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
+const OVERSIZED_IMAGE_PLACEHOLDER = "[image is taller than the transcript viewport]";
 
 function getProtectedLineSpans(lines: string[]): ProtectedLineSpan[] {
 	const spans: ProtectedLineSpan[] = [];
@@ -84,16 +90,84 @@ function getOsc133ZoneSpans(lines: string[]): ProtectedLineSpan[] {
 	return spans;
 }
 
-function sliceTranscript(lines: string[], start: number, end: number): string[] {
-	const partialImages = getProtectedLineSpans(lines).filter(
-		(span) => span.start < end && span.end > start && (span.start < start || span.end > end),
+function buildImageSafePages(lines: string[], viewportRows: number): ProtectedLineSpan[] {
+	if (viewportRows <= 0) return [];
+	const imageSpans = getProtectedLineSpans(lines);
+	if (imageSpans.length === 0) return [];
+	const imagesByStart = new Map(imageSpans.map((span) => [span.start, span]));
+	const pages: ProtectedLineSpan[] = [];
+	let pageStart = 0;
+	let pageRows = 0;
+	let index = 0;
+	while (index < lines.length) {
+		const image = imagesByStart.get(index);
+		const itemEnd = image?.end ?? index + 1;
+		const itemRows = image ? Math.min(image.end - image.start, 1) : 1;
+		const renderedRows = image && image.end - image.start <= viewportRows ? image.end - image.start : itemRows;
+		if (pageRows > 0 && pageRows + renderedRows > viewportRows) {
+			pages.push({ start: pageStart, end: index });
+			pageStart = index;
+			pageRows = 0;
+		}
+		pageRows += renderedRows;
+		index = itemEnd;
+		if (pageRows === viewportRows) {
+			pages.push({ start: pageStart, end: index });
+			pageStart = index;
+			pageRows = 0;
+		}
+	}
+	if (pageStart < lines.length) pages.push({ start: pageStart, end: lines.length });
+	return pages;
+}
+
+function resolveImageSafePage(
+	state: TranscriptViewportState,
+	pages: ProtectedLineSpan[],
+	contentRows: number,
+): TranscriptViewportRange {
+	const scrollTop = Math.max(0, state.scrollTop);
+	const page = pages.find((candidate) => scrollTop >= candidate.start && scrollTop < candidate.end) ?? pages.at(-1)!;
+	return {
+		state: { scrollTop: page.start, followTail: false },
+		start: page.start,
+		end: page.end,
+		hiddenAbove: page.start,
+		hiddenBelow: contentRows - page.end,
+	};
+}
+
+function sliceTranscript(
+	lines: string[],
+	start: number,
+	end: number,
+	width: number,
+	viewportRows: number,
+): SlicedTranscript {
+	const imageSpans = getProtectedLineSpans(lines);
+	const oversizedImages = imageSpans.filter((span) => span.end - span.start > viewportRows);
+	const partialImages = imageSpans.filter(
+		(span) =>
+			span.end - span.start <= viewportRows &&
+			span.start < end &&
+			span.end > start &&
+			(span.start < start || span.end > end),
 	);
 	const partialZones = getOsc133ZoneSpans(lines).filter(
 		(span) => span.start < end && span.end > start && (span.start < start || span.end > end),
 	);
 	const result: string[] = [];
+	const protectedRows = new Set<number>();
 	for (let index = start; index < end; index += 1) {
-		if (partialImages.some((span) => index >= span.start && index < span.end)) continue;
+		const oversizedImage = oversizedImages.find((span) => index >= span.start && index < span.end);
+		if (oversizedImage) {
+			if (index === Math.max(start, oversizedImage.start)) {
+				result.push(truncateToWidth(OVERSIZED_IMAGE_PLACEHOLDER, width, ""));
+			}
+			continue;
+		}
+		const partialImage = partialImages.find((span) => index >= span.start && index < span.end);
+		if (partialImage) continue;
 		let line = lines[index]!;
 		if (partialZones.some((span) => index >= span.start && index < span.end)) {
 			line = line
@@ -101,9 +175,10 @@ function sliceTranscript(lines: string[], start: number, end: number): string[] 
 				.replaceAll(OSC133_ZONE_END, "")
 				.replaceAll(OSC133_ZONE_FINAL, "");
 		}
+		if (imageSpans.some((span) => index >= span.start && index < span.end)) protectedRows.add(result.length);
 		result.push(line);
 	}
-	return result;
+	return { lines: result, protectedRows };
 }
 
 export class InteractiveViewport implements Component {
@@ -114,6 +189,7 @@ export class InteractiveViewport implements Component {
 	private viewportRows = 0;
 	private lastWidth: number | undefined;
 	private lastTranscriptLines: string[] = [];
+	private imageSafePages: ProtectedLineSpan[] = [];
 	private range: TranscriptViewportRange = resolveTranscriptViewport(this.state, 0, 0);
 
 	constructor(getHeight: () => number, sections: InteractiveViewportSections) {
@@ -170,23 +246,71 @@ export class InteractiveViewport implements Component {
 		this.lastTranscriptLines = transcriptLines;
 		this.contentRows = contentRows;
 		this.viewportRows = viewportRows;
-		this.range = resolveTranscriptViewport(this.state, this.contentRows, this.viewportRows);
+		this.imageSafePages = buildImageSafePages(transcriptLines, this.viewportRows);
+		this.range =
+			!this.state.followTail && this.imageSafePages.length > 0
+				? resolveImageSafePage(this.state, this.imageSafePages, this.contentRows)
+				: resolveTranscriptViewport(this.state, this.contentRows, this.viewportRows);
 		this.state = this.range.state;
 
-		const visibleTranscript = sliceTranscript(transcriptLines, this.range.start, this.range.end);
-		const padding = Array.from({ length: this.viewportRows - visibleTranscript.length }, () => "");
-		const transcriptFrame = [...visibleTranscript, ...padding];
+		const visibleTranscript = sliceTranscript(
+			transcriptLines,
+			this.range.start,
+			this.range.end,
+			width,
+			this.viewportRows,
+		);
+		const padding = Array.from({ length: this.viewportRows - visibleTranscript.lines.length }, () => "");
+		const transcriptFrame = [...visibleTranscript.lines, ...padding];
 		if (!this.range.state.followTail && transcriptFrame.length > 0 && this.sections.renderScrollIndicator) {
-			transcriptFrame[0] = this.sections.renderScrollIndicator(transcriptFrame[0]!, width);
+			const indicatorRow = transcriptFrame.findIndex((_line, index) => !visibleTranscript.protectedRows.has(index));
+			if (indicatorRow !== -1) {
+				transcriptFrame[indicatorRow] = this.sections.renderScrollIndicator(transcriptFrame[indicatorRow]!, width);
+			}
 		}
 		return [...visibleHeader, ...transcriptFrame, ...bottomLines, ...footerLines];
 	}
 
 	pageUp(): void {
+		if (this.imageSafePages.length > 0) {
+			if (this.state.followTail) {
+				const tail = resolveTranscriptViewport(this.state, this.contentRows, this.viewportRows);
+				let index = this.imageSafePages.findIndex((page) => tail.start >= page.start && tail.start < page.end);
+				if (
+					index > 0 &&
+					this.imageSafePages[index]!.start === tail.start &&
+					this.imageSafePages[index]!.end === tail.end
+				) {
+					index -= 1;
+				}
+				if (index >= 0) {
+					this.state = { scrollTop: this.imageSafePages[index]!.start, followTail: false };
+					return;
+				}
+			}
+			const index = this.imageSafePages.findIndex(
+				(page) => this.state.scrollTop >= page.start && this.state.scrollTop < page.end,
+			);
+			this.state = {
+				scrollTop: index > 0 ? this.imageSafePages[index - 1]!.start : 0,
+				followTail: false,
+			};
+			return;
+		}
 		this.state = moveTranscriptViewport(this.state, this.contentRows, this.viewportRows, { type: "pageUp" });
 	}
 
 	pageDown(): void {
+		if (this.imageSafePages.length > 0 && !this.state.followTail) {
+			const index = this.imageSafePages.findIndex(
+				(page) => this.state.scrollTop >= page.start && this.state.scrollTop < page.end,
+			);
+			const nextPage = this.imageSafePages[index + 1];
+			this.state = nextPage
+				? { scrollTop: nextPage.start, followTail: false }
+				: moveTranscriptViewport(this.state, this.contentRows, this.viewportRows, { type: "end" });
+			return;
+		}
 		this.state = moveTranscriptViewport(this.state, this.contentRows, this.viewportRows, { type: "pageDown" });
 	}
 
