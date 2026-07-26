@@ -36,6 +36,7 @@ import {
 	Text,
 	TruncatedText,
 	TUI,
+	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import chalk from "chalk";
@@ -117,6 +118,7 @@ import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
 import { FooterComponent, formatTokens } from "./components/footer.ts";
+import { InteractiveViewport } from "./components/interactive-viewport.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
@@ -325,6 +327,7 @@ export class InteractiveMode {
 	private ui: TUI;
 	private loadedResourcesContainer: Container;
 	private chatContainer: Container;
+	private transcriptContainer: Container;
 	private pendingMessagesContainer: Container;
 	private statusContainer: Container;
 	private defaultEditor: CustomEditor;
@@ -334,6 +337,9 @@ export class InteractiveMode {
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
 	private editorContainer: Container;
+	private bottomContainer: Container;
+	private footerContainer: Container;
+	private viewport: InteractiveViewport;
 	private footer: FooterComponent;
 	private footerDataProvider: FooterDataProvider;
 	// Stored so the same manager can be injected into custom editors, selectors, and extension UI.
@@ -461,6 +467,9 @@ export class InteractiveMode {
 		this.headerContainer = new Container();
 		this.loadedResourcesContainer = new Container();
 		this.chatContainer = new Container();
+		this.transcriptContainer = new Container();
+		this.transcriptContainer.addChild(this.loadedResourcesContainer);
+		this.transcriptContainer.addChild(this.chatContainer);
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
@@ -479,6 +488,27 @@ export class InteractiveMode {
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
+		this.footerContainer = new Container();
+		this.footerContainer.addChild(this.footer);
+		this.bottomContainer = new Container();
+		this.bottomContainer.addChild(this.pendingMessagesContainer);
+		this.bottomContainer.addChild(this.statusContainer);
+		this.bottomContainer.addChild(this.widgetContainerAbove);
+		this.bottomContainer.addChild(this.editorContainer);
+		this.bottomContainer.addChild(this.widgetContainerBelow);
+		this.viewport = new InteractiveViewport(() => this.ui.terminal.rows, {
+			header: this.headerContainer,
+			transcript: this.transcriptContainer,
+			bottom: this.bottomContainer,
+			footer: this.footerContainer,
+			renderScrollIndicator: (line, width) => {
+				if (width <= 0 || line.includes("\x1b_G") || line.includes("\x1b]1337;File=")) return line;
+				const marker = theme.fg("accent", "↑");
+				const contentWidth = Math.max(0, width - visibleWidth(marker));
+				const content = truncateToWidth(line, contentWidth, "");
+				return content + " ".repeat(Math.max(0, contentWidth - visibleWidth(content))) + marker;
+			},
+		});
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -704,19 +734,8 @@ export class InteractiveMode {
 			console.log(theme.fg("dim", `Model scope: ${modelList}${cycleHint}`));
 		}
 
-		// Add header container as first child. Populate it after applying theme settings.
-		// Keep loaded resources before chat so restored session messages never precede them.
-		this.ui.addChild(this.headerContainer);
-		this.ui.addChild(this.loadedResourcesContainer);
-
-		this.ui.addChild(this.chatContainer);
-		this.ui.addChild(this.pendingMessagesContainer);
-		this.ui.addChild(this.statusContainer);
 		this.renderWidgets(); // Initialize with default spacer
-		this.ui.addChild(this.widgetContainerAbove);
-		this.ui.addChild(this.editorContainer);
-		this.ui.addChild(this.widgetContainerBelow);
-		this.ui.addChild(this.footer);
+		this.ui.addChild(this.viewport);
 		this.ui.setFocus(this.editor);
 
 		this.setupKeyHandlers();
@@ -1671,6 +1690,7 @@ export class InteractiveMode {
 					}
 
 					this.chatContainer.clear();
+					this.viewport.reset();
 					this.renderInitialMessages();
 					if (result.editorText && !this.editor.getText().trim()) {
 						this.editor.setText(result.editorText);
@@ -1755,6 +1775,7 @@ export class InteractiveMode {
 	}
 
 	private renderCurrentSessionState(): void {
+		this.viewport.reset();
 		this.loadedResourcesContainer.clear();
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
@@ -2037,21 +2058,21 @@ export class InteractiveMode {
 			this.customFooter.dispose();
 		}
 
-		// Remove current footer from UI
+		// Remove current footer from the fixed bottom region
 		if (this.customFooter) {
-			this.ui.removeChild(this.customFooter);
+			this.footerContainer.removeChild(this.customFooter);
 		} else {
-			this.ui.removeChild(this.footer);
+			this.footerContainer.removeChild(this.footer);
 		}
 
 		if (factory) {
 			// Create and add custom footer, passing the data provider
 			this.customFooter = factory(this.ui, theme, this.footerDataProvider);
-			this.ui.addChild(this.customFooter);
+			this.footerContainer.addChild(this.customFooter);
 		} else {
 			// Restore built-in footer
 			this.customFooter = undefined;
-			this.ui.addChild(this.footer);
+			this.footerContainer.addChild(this.footer);
 		}
 
 		this.ui.requestRender();
@@ -2417,6 +2438,11 @@ export class InteractiveMode {
 				for (const [action, handler] of this.defaultEditor.actionHandlers) {
 					(customEditor.actionHandlers as Map<string, () => void>).set(action, handler);
 				}
+				if ("conditionalActionHandlers" in customEditor && customEditor.conditionalActionHandlers instanceof Map) {
+					for (const [action, handler] of this.defaultEditor.conditionalActionHandlers) {
+						(customEditor.conditionalActionHandlers as Map<string, () => boolean>).set(action, handler);
+					}
+				}
 			}
 
 			this.editor = newEditor;
@@ -2596,6 +2622,10 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.message.copy", () => void this.handleCopyCommand());
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
+		this.defaultEditor.onConditionalAction("app.transcript.pageUp", () => this.navigateTranscript("pageUp"));
+		this.defaultEditor.onConditionalAction("app.transcript.pageDown", () => this.navigateTranscript("pageDown"));
+		this.defaultEditor.onConditionalAction("app.transcript.home", () => this.navigateTranscript("home"));
+		this.defaultEditor.onConditionalAction("app.transcript.end", () => this.navigateTranscript("end"));
 		this.defaultEditor.onAction("app.session.new", () => this.handleClearCommand());
 		this.defaultEditor.onAction("app.session.tree", () => this.showTreeSelector());
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
@@ -2614,6 +2644,13 @@ export class InteractiveMode {
 		this.defaultEditor.onPasteImage = () => {
 			void this.handleClipboardPaste();
 		};
+	}
+
+	private navigateTranscript(action: "pageUp" | "pageDown" | "home" | "end"): boolean {
+		if (this.editor.getText().length > 0) return false;
+		this.viewport[action]();
+		this.ui.requestRender();
+		return true;
 	}
 
 	private async handleClipboardPaste(): Promise<void> {
@@ -3512,6 +3549,7 @@ export class InteractiveMode {
 	}
 
 	private rebuildChatFromMessages(): void {
+		this.viewport.reset();
 		this.chatContainer.clear();
 		this.renderSessionEntries(this.sessionManager.buildContextEntries());
 	}
@@ -4715,6 +4753,7 @@ export class InteractiveMode {
 
 						// Update UI
 						this.chatContainer.clear();
+						this.viewport.reset();
 						this.renderInitialMessages();
 						if (result.editorText && !this.editor.getText().trim()) {
 							this.editor.setText(result.editorText);
@@ -5772,6 +5811,10 @@ export class InteractiveMode {
 		const followUp = this.getAppKeyDisplay("app.message.followUp");
 		const dequeue = this.getAppKeyDisplay("app.message.dequeue");
 		const pasteImage = this.getAppKeyDisplay("app.clipboard.pasteImage");
+		const transcriptPageUp = this.getAppKeyDisplay("app.transcript.pageUp");
+		const transcriptPageDown = this.getAppKeyDisplay("app.transcript.pageDown");
+		const transcriptHome = this.getAppKeyDisplay("app.transcript.home");
+		const transcriptEnd = this.getAppKeyDisplay("app.transcript.end");
 
 		let hotkeys = `
 **Navigation**
@@ -5784,6 +5827,8 @@ export class InteractiveMode {
 | \`${jumpForward}\` | Jump forward to character |
 | \`${jumpBackward}\` | Jump backward to character |
 | \`${pageUp}\` / \`${pageDown}\` | Scroll by page |
+| \`${transcriptPageUp}\` / \`${transcriptPageDown}\` | Scroll transcript when the editor is empty |
+| \`${transcriptHome}\` / \`${transcriptEnd}\` | First transcript line / resume live output when the editor is empty |
 
 **Editing**
 | Key | Action |
@@ -5864,20 +5909,33 @@ export class InteractiveMode {
 	private handleDebugCommand(): void {
 		const width = this.ui.terminal.columns;
 		const height = this.ui.terminal.rows;
-		const allLines = this.ui.render(width);
+		const visibleLines = this.ui.render(width);
+		const viewportRange = this.viewport.getRange();
+		const sectionLines = [
+			["Header", this.headerContainer.render(width)],
+			["Transcript", this.transcriptContainer.render(width)],
+			["Composer", this.bottomContainer.render(width)],
+			["Footer", this.footerContainer.render(width)],
+		] as const;
 
 		const debugLogPath = getDebugLogPath();
 		const debugData = [
 			`Debug output at ${new Date().toISOString()}`,
 			`Terminal: ${width}x${height}`,
-			`Total lines: ${allLines.length}`,
+			`Base frame lines: ${visibleLines.length}`,
+			`Viewport: ${viewportRange.start}-${viewportRange.end} (above=${viewportRange.hiddenAbove}, below=${viewportRange.hiddenBelow}, followTail=${viewportRange.state.followTail})`,
 			"",
-			"=== All rendered lines with visible widths ===",
-			...allLines.map((line, idx) => {
+			"=== Base frame before overlays with visible widths ===",
+			...visibleLines.map((line, idx) => {
 				const vw = visibleWidth(line);
 				const escaped = JSON.stringify(line);
 				return `[${idx}] (w=${vw}) ${escaped}`;
 			}),
+			...sectionLines.flatMap(([name, lines]) => [
+				"",
+				`=== Full ${name.toLowerCase()} (${lines.length} lines) ===`,
+				...lines.map((line, idx) => `[${idx}] (w=${visibleWidth(line)}) ${JSON.stringify(line)}`),
+			]),
 			"",
 			"=== Agent messages (JSONL) ===",
 			...this.session.messages.map((msg) => JSON.stringify(msg)),

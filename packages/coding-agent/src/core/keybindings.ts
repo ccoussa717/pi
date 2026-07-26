@@ -27,6 +27,10 @@ export interface AppKeybindings {
 	"app.message.followUp": true;
 	"app.message.dequeue": true;
 	"app.clipboard.pasteImage": true;
+	"app.transcript.pageUp": true;
+	"app.transcript.pageDown": true;
+	"app.transcript.home": true;
+	"app.transcript.end": true;
 	"app.session.new": true;
 	"app.session.tree": true;
 	"app.session.fork": true;
@@ -112,6 +116,10 @@ export const KEYBINDINGS = {
 		defaultKeys: process.platform === "win32" ? "alt+v" : "ctrl+v",
 		description: "Paste image from clipboard (text fallback)",
 	},
+	"app.transcript.pageUp": { defaultKeys: "pageUp", description: "Scroll transcript up one page" },
+	"app.transcript.pageDown": { defaultKeys: "pageDown", description: "Scroll transcript down one page" },
+	"app.transcript.home": { defaultKeys: "home", description: "Scroll to start of transcript" },
+	"app.transcript.end": { defaultKeys: "end", description: "Resume following transcript output" },
 	"app.session.new": { defaultKeys: [], description: "Start a new session" },
 	"app.session.tree": { defaultKeys: [], description: "Open session tree" },
 	"app.session.fork": { defaultKeys: [], description: "Fork current session" },

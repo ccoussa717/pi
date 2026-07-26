@@ -1,9 +1,10 @@
-import { Box, Container, Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
+import { Box, Container, Markdown, type MarkdownTheme, truncateToWidth } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
+const USER_MESSAGE_RAIL = "▌";
 
 /**
  * Component that renders a user message
@@ -45,11 +46,16 @@ export class UserMessageComponent extends Container {
 	}
 
 	override render(width: number): string[] {
-		const lines = super.render(width);
+		if (width <= 0) return [];
+		const lines = super.render(Math.max(1, width - 1));
 		if (lines.length === 0) {
 			return lines;
 		}
 
+		const rail = theme.fg("success", USER_MESSAGE_RAIL);
+		for (let index = 0; index < lines.length; index += 1) {
+			lines[index] = truncateToWidth(rail + lines[index], width, "");
+		}
 		lines[0] = OSC133_ZONE_START + lines[0];
 		lines[lines.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + lines[lines.length - 1];
 		return lines;

@@ -7,6 +7,7 @@ import type { AppKeybinding, KeybindingsManager } from "../../../core/keybinding
 export class CustomEditor extends Editor {
 	private keybindings: KeybindingsManager;
 	public actionHandlers: Map<AppKeybinding, () => void> = new Map();
+	public conditionalActionHandlers: Map<AppKeybinding, () => boolean> = new Map();
 
 	// Special handlers that can be dynamically replaced
 	public onEscape?: () => void;
@@ -25,6 +26,10 @@ export class CustomEditor extends Editor {
 	 */
 	onAction(action: AppKeybinding, handler: () => void): void {
 		this.actionHandlers.set(action, handler);
+	}
+
+	onConditionalAction(action: AppKeybinding, handler: () => boolean): void {
+		this.conditionalActionHandlers.set(action, handler);
 	}
 
 	handleInput(data: string): void {
@@ -64,6 +69,13 @@ export class CustomEditor extends Editor {
 				return;
 			}
 			// Fall through to editor handling for delete-char-forward when not empty
+		}
+
+		for (const [action, handler] of this.conditionalActionHandlers) {
+			if (this.keybindings.matches(data, action)) {
+				if (handler()) return;
+				break;
+			}
 		}
 
 		// Check all other app actions
