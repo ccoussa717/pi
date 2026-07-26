@@ -1,4 +1,5 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, test } from "vitest";
 import { AssistantMessageComponent } from "../src/modes/interactive/components/assistant-message.ts";
 import { UserMessageComponent } from "../src/modes/interactive/components/user-message.ts";
@@ -11,14 +12,14 @@ const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 
 function createAssistantMessage(
 	content: AssistantMessage["content"],
-	overrides: Partial<Pick<AssistantMessage, "stopReason">> = {},
+	overrides: Partial<Pick<AssistantMessage, "model" | "stopReason">> = {},
 ): AssistantMessage {
 	return {
 		role: "assistant",
 		content,
 		api: "openai-responses",
 		provider: "openai",
-		model: "gpt-4o-mini",
+		model: overrides.model ?? "gpt-4o-mini",
 		usage: {
 			input: 0,
 			output: 0,
@@ -69,7 +70,8 @@ describe("AssistantMessageComponent", () => {
 		);
 		const rendered = component.render(80).join("\n");
 
-		expect(rendered).toContain("Thinking...");
+		expect(rendered).toContain("Thinking: gpt-4o-mini");
+		expect(rendered).not.toContain("private reasoning");
 		expect(rendered).toContain("maximum output token limit");
 		expect(rendered).toContain("response may be incomplete");
 	});
@@ -88,8 +90,51 @@ describe("AssistantMessageComponent", () => {
 		);
 		const rendered = stripAnsi(component.render(80).join("\n"));
 
-		expect(rendered.match(/Thinking\.\.\./g)).toHaveLength(1);
+		expect(rendered.match(/Thinking: gpt-4o-mini/g)).toHaveLength(1);
+		expect(rendered).not.toContain("first thought");
+		expect(rendered).not.toContain("second thought");
 		expect(rendered).toContain("answer");
+	});
+
+	test("uses model metadata without exposing title-like hidden reasoning", () => {
+		initTheme("dark");
+
+		const component = new AssistantMessageComponent(
+			createAssistantMessage([
+				{
+					type: "thinking",
+					thinking: "**API key sk-private-123**\n\n\x1b[31mThe full private reasoning stays collapsed.",
+				},
+			]),
+			true,
+		);
+		const rawRendered = component.render(80).join("\n");
+		const rendered = stripAnsi(rawRendered);
+
+		expect(rendered).toContain("Thinking: gpt-4o-mini");
+		expect(rendered).not.toContain("sk-private-123");
+		expect(rendered).not.toContain("full private reasoning");
+		expect(rawRendered).not.toContain("\x1b[31m");
+	});
+
+	test("keeps collapsed activity labels to one display-width-bounded line", () => {
+		initTheme("dark");
+		const model = `${"界".repeat(40)} family 👨‍👩‍👧‍👦`;
+		const component = new AssistantMessageComponent(
+			createAssistantMessage([{ type: "thinking", thinking: "Private details." }], { model }),
+			true,
+			undefined,
+			`${"Reviewing".repeat(12)}...`,
+			0,
+		);
+		const activityLines = component
+			.render(200)
+			.map((line) => stripAnsi(line))
+			.filter((line) => line.includes("Reviewing"));
+
+		expect(activityLines).toHaveLength(1);
+		expect(visibleWidth(activityLines[0]!.trimEnd())).toBeLessThanOrEqual(72);
+		expect(activityLines[0]).not.toContain("Private details");
 	});
 
 	test("uses configured output padding for text and thinking", () => {

@@ -1,10 +1,27 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
+import { Container, Markdown, type MarkdownTheme, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
+const THINKING_ACTIVITY_MAX_WIDTH = 72;
+
+function sanitizeActivityText(text: string): string {
+	return Array.from(text, (character) => {
+		const codePoint = character.codePointAt(0)!;
+		return codePoint < 32 || (codePoint >= 127 && codePoint <= 159) ? " " : character;
+	})
+		.join("")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function compactThinkingLabel(label: string, model: string): string {
+	const base = sanitizeActivityText(label).replace(/[.:\s]+$/, "") || "Thinking";
+	const modelName = sanitizeActivityText(model);
+	return truncateToWidth(modelName ? `${base}: ${modelName}` : base, THINKING_ACTIVITY_MAX_WIDTH);
+}
 
 /**
  * Component that renders a complete assistant message
@@ -128,7 +145,13 @@ export class AssistantMessageComponent extends Container {
 				if (this.hideThinkingBlock) {
 					// Show one static label for each run of thinking blocks when hidden.
 					this.contentContainer.addChild(
-						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0),
+						new Text(
+							theme.italic(
+								theme.fg("thinkingText", compactThinkingLabel(this.hiddenThinkingLabel, message.model)),
+							),
+							this.outputPad,
+							0,
+						),
 					);
 				} else {
 					// Render each run of thinking blocks as one Markdown section.

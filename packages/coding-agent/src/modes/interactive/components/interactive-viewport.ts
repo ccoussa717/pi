@@ -314,6 +314,19 @@ export class InteractiveViewport implements Component {
 		this.state = moveTranscriptViewport(this.state, this.contentRows, this.viewportRows, { type: "pageDown" });
 	}
 
+	scrollBy(rows: number): void {
+		if (!Number.isFinite(rows) || rows === 0) return;
+		if (this.imageSafePages.length > 0) {
+			if (rows < 0) this.pageUp();
+			else this.pageDown();
+			return;
+		}
+		this.state = moveTranscriptViewport(this.state, this.contentRows, this.viewportRows, {
+			type: "scroll",
+			rows,
+		});
+	}
+
 	home(): void {
 		this.state = moveTranscriptViewport(this.state, this.contentRows, this.viewportRows, { type: "home" });
 	}

@@ -82,6 +82,7 @@ These variables are read by Pi itself:
 | `PI_CACHE_RETENTION` | Set to `long` for extended provider prompt caching where supported |
 | `PI_SHARE_VIEWER_URL` | Override the base URL used by `/share` |
 | `PI_HARDWARE_CURSOR` | Set to `1` to show the hardware cursor; see [Terminal setup](terminal-setup.md) |
+| `PI_DISABLE_MOUSE` | Set to `1` to leave mouse capture disabled; see [Terminal setup](terminal-setup.md) |
 | `VISUAL`, `EDITOR` | External editor fallback when `externalEditor` is unset |
 | `HTTP_PROXY`, `HTTPS_PROXY` | Proxy outbound HTTP requests |
 

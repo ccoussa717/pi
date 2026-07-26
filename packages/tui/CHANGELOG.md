@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added SGR mouse-wheel tracking and a TUI wheel callback, with `PI_DISABLE_MOUSE=1` available to leave mouse capture disabled.
+
 ## [0.82.1] - 2026-07-25
 
 ## [0.82.0] - 2026-07-24

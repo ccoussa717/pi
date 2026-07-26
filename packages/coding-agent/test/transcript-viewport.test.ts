@@ -62,6 +62,19 @@ describe("resolveTranscriptViewport", () => {
 		expect(state).toEqual({ scrollTop: 70, followTail: true });
 	});
 
+	test("line scrolling moves by the requested number of transcript rows", () => {
+		const scrolledUp = moveTranscriptViewport(INITIAL_TRANSCRIPT_VIEWPORT_STATE, 100, 30, {
+			type: "scroll",
+			rows: -3,
+		});
+
+		expect(scrolledUp).toEqual({ scrollTop: 67, followTail: false });
+		expect(moveTranscriptViewport(scrolledUp, 100, 30, { type: "scroll", rows: 3 })).toEqual({
+			scrollTop: 70,
+			followTail: true,
+		});
+	});
+
 	test("home and end select the transcript boundaries", () => {
 		expect(moveTranscriptViewport(INITIAL_TRANSCRIPT_VIEWPORT_STATE, 100, 30, { type: "home" })).toEqual({
 			scrollTop: 0,

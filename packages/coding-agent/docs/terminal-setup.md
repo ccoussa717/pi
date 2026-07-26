@@ -2,6 +2,14 @@
 
 Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
 
+## Mouse Scrolling
+
+Pi enables SGR mouse tracking so a mouse wheel or trackpad scrolls the interactive transcript while the composer stays fixed. Hold your terminal's selection modifier, usually `Shift`, while dragging to select terminal text.
+
+Scrolling moves by three transcript rows. When inline terminal images are present, Pi uses image-aligned pages instead so graphics are never split across viewport boundaries.
+
+Set `PI_DISABLE_MOUSE=1` before starting pi to leave mouse capture disabled. PageUp, PageDown, Home, and End transcript navigation remain available.
+
 ## Kitty, iTerm2
 
 Work out of the box.

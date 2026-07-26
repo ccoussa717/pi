@@ -5,10 +5,12 @@
 ### Added
 
 - Added a terminal-height-aware interactive viewport with a fixed composer/footer, independent transcript navigation, tail following, and safe image clipping.
+- Added mouse and trackpad transcript scrolling with three-row increments, image-safe page navigation, and existing tail-follow behavior.
 
 ### Changed
 
 - Changed standard user messages to use a width-safe accent rail while preserving OSC 133 prompt markers.
+- Changed collapsed thinking blocks to show concise model activity metadata while keeping the full reasoning hidden until expanded.
 
 ## [0.82.1] - 2026-07-25
 
