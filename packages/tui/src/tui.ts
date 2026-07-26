@@ -7,7 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import { isKeyRelease, matchesKey } from "./keys.ts";
-import type { Terminal } from "./terminal.ts";
+import { type MouseWheelDirection, parseTerminalMouseInput, type Terminal } from "./terminal.ts";
 import {
 	isOsc11BackgroundColorResponse,
 	parseOsc11BackgroundColor,
@@ -303,6 +303,8 @@ export class TUI extends Container {
 
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
 	public onDebug?: () => void;
+	/** Global mouse-wheel callback. Mouse input is consumed before reaching the focused editor. */
+	public onMouseWheel?: (direction: MouseWheelDirection) => void;
 	private renderRequested = false;
 	private renderTimer: NodeJS.Timeout | undefined;
 	private lastRenderAt = 0;
@@ -789,6 +791,12 @@ export class TUI extends Container {
 
 		// Consume terminal cell size responses without blocking unrelated input.
 		if (this.consumeCellSizeResponse(data)) {
+			return;
+		}
+
+		const mouseInput = parseTerminalMouseInput(data);
+		if (mouseInput) {
+			if (mouseInput.type === "wheel") this.onMouseWheel?.(mouseInput.direction);
 			return;
 		}
 

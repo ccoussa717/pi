@@ -509,6 +509,17 @@ export class InteractiveMode {
 				return content + " ".repeat(Math.max(0, contentWidth - visibleWidth(content))) + marker;
 			},
 		});
+		this.ui.onMouseWheel = (direction) => {
+			if (
+				this.ui.hasOverlay() ||
+				this.editor !== this.defaultEditor ||
+				this.extensionInput !== undefined ||
+				this.extensionEditor !== undefined
+			)
+				return;
+			this.viewport.scrollBy(direction * 3);
+			this.ui.requestRender();
+		};
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();

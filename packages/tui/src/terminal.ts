@@ -15,6 +15,24 @@ const APPLE_TERMINAL_SHIFT_ENTER_SEQUENCE = "\x1b[13;2u";
 const DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS = 7;
 const KEYBOARD_PROTOCOL_RESPONSE_FRAGMENT_TIMEOUT_MS = 150;
 const KITTY_KEYBOARD_PROTOCOL_QUERY = `\x1b[>${DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS}u\x1b[?u\x1b[c`;
+const ENABLE_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1006h";
+const DISABLE_MOUSE_TRACKING = "\x1b[?1006l\x1b[?1000l";
+
+export type MouseWheelDirection = -1 | 1;
+export type TerminalMouseInput = { type: "wheel"; direction: MouseWheelDirection } | { type: "other" };
+
+export function parseTerminalMouseInput(sequence: string): TerminalMouseInput | undefined {
+	const sgrMatch = sequence.match(/^\x1b\[<(\d+);\d+;\d+([Mm])$/);
+	const legacyMatch = sequence.match(/^\x1b\[M([\s\S])([\s\S])([\s\S])$/);
+	if (!sgrMatch && !legacyMatch) return undefined;
+	if (sgrMatch?.[2] === "m") return { type: "other" };
+	const button = sgrMatch ? Number.parseInt(sgrMatch[1]!, 10) : legacyMatch![1]!.charCodeAt(0) - 32;
+	if ((button & 64) === 0) return { type: "other" };
+	const wheelButton = button & 3;
+	if (wheelButton === 0) return { type: "wheel", direction: -1 };
+	if (wheelButton === 1) return { type: "wheel", direction: 1 };
+	return { type: "other" };
+}
 
 export type KeyboardProtocolNegotiationSequence =
 	| { type: "kitty-flags"; flags: number }
@@ -108,6 +126,7 @@ export class ProcessTerminal implements Terminal {
 	private stdinBuffer?: StdinBuffer;
 	private stdinDataHandler?: (data: string) => void;
 	private progressInterval?: ReturnType<typeof setInterval>;
+	private readonly mouseTrackingEnabled = process.env.PI_DISABLE_MOUSE !== "1";
 	private writeLogPath = (() => {
 		const env = process.env.PI_TUI_WRITE_LOG || "";
 		if (!env) return "";
@@ -145,6 +164,7 @@ export class ProcessTerminal implements Terminal {
 
 		// Enable bracketed paste mode - terminal will wrap pastes in \x1b[200~ ... \x1b[201~
 		process.stdout.write("\x1b[?2004h");
+		if (this.mouseTrackingEnabled) process.stdout.write(ENABLE_MOUSE_TRACKING);
 
 		// Set up resize handler immediately
 		process.stdout.on("resize", this.resizeHandler);
@@ -407,6 +427,8 @@ export class ProcessTerminal implements Terminal {
 		if (this.clearProgressInterval()) {
 			process.stdout.write(TERMINAL_PROGRESS_CLEAR_SEQUENCE);
 		}
+
+		if (this.mouseTrackingEnabled) process.stdout.write(DISABLE_MOUSE_TRACKING);
 
 		// Disable bracketed paste mode
 		process.stdout.write("\x1b[?2004l");

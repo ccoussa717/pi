@@ -16,7 +16,12 @@ export const INITIAL_TRANSCRIPT_VIEWPORT_STATE: TranscriptViewportState = {
 	followTail: true,
 };
 
-export type TranscriptViewportAction = { type: "pageUp" } | { type: "pageDown" } | { type: "home" } | { type: "end" };
+export type TranscriptViewportAction =
+	| { type: "pageUp" }
+	| { type: "pageDown" }
+	| { type: "home" }
+	| { type: "end" }
+	| { type: "scroll"; rows: number };
 
 export function resolveTranscriptViewport(
 	state: TranscriptViewportState,
@@ -61,5 +66,10 @@ export function moveTranscriptViewport(
 			return { scrollTop: 0, followTail: maxScrollTop === 0 };
 		case "end":
 			return { scrollTop: maxScrollTop, followTail: true };
+		case "scroll": {
+			const rows = Number.isFinite(action.rows) ? Math.trunc(action.rows) : 0;
+			const scrollTop = Math.min(maxScrollTop, Math.max(0, resolved.start + rows));
+			return { scrollTop, followTail: scrollTop === maxScrollTop };
+		}
 	}
 }

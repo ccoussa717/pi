@@ -83,6 +83,27 @@ describe("InteractiveViewport", () => {
 		]);
 	});
 
+	test("scrolls the transcript by a small row increment", () => {
+		const viewport = new InteractiveViewport(() => 10, {
+			header: new LinesComponent(["header"]),
+			transcript: new LinesComponent(Array.from({ length: 20 }, (_, index) => `line ${index + 1}`)),
+			bottom: new LinesComponent(["editor", "footer"]),
+		});
+
+		viewport.render(80);
+		viewport.scrollBy(-3);
+
+		expect(viewport.render(80).slice(1, 8)).toEqual([
+			"line 11",
+			"line 12",
+			"line 13",
+			"line 14",
+			"line 15",
+			"line 16",
+			"line 17",
+		]);
+	});
+
 	test("shows a scroll indicator only while away from the tail", () => {
 		const viewport = new InteractiveViewport(() => 8, {
 			header: new LinesComponent(["header"]),

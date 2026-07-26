@@ -1,7 +1,29 @@
 import assert from "node:assert";
 import { describe, it, mock } from "node:test";
 import { setKittyProtocolActive } from "../src/keys.ts";
-import { normalizeAppleTerminalInput, ProcessTerminal } from "../src/terminal.ts";
+import { normalizeAppleTerminalInput, ProcessTerminal, parseTerminalMouseInput } from "../src/terminal.ts";
+
+describe("parseTerminalMouseInput", () => {
+	it("parses vertical wheel events with optional modifiers", () => {
+		assert.deepStrictEqual(parseTerminalMouseInput("\x1b[<64;20;5M"), { type: "wheel", direction: -1 });
+		assert.deepStrictEqual(parseTerminalMouseInput("\x1b[<65;20;5M"), { type: "wheel", direction: 1 });
+		assert.deepStrictEqual(parseTerminalMouseInput("\x1b[<68;20;5M"), { type: "wheel", direction: -1 });
+		assert.deepStrictEqual(parseTerminalMouseInput("\x1b[<69;20;5M"), { type: "wheel", direction: 1 });
+	});
+
+	it("recognizes non-wheel SGR reports so they can be consumed", () => {
+		assert.deepStrictEqual(parseTerminalMouseInput("\x1b[<0;20;5M"), { type: "other" });
+		assert.deepStrictEqual(parseTerminalMouseInput("\x1b[<66;20;5M"), { type: "other" });
+		assert.deepStrictEqual(parseTerminalMouseInput("\x1b[<64;20;5m"), { type: "other" });
+	});
+
+	it("parses legacy wheel reports and recognizes other legacy mouse input", () => {
+		assert.deepStrictEqual(parseTerminalMouseInput("\x1b[M`45"), { type: "wheel", direction: -1 });
+		assert.deepStrictEqual(parseTerminalMouseInput("\x1b[Ma45"), { type: "wheel", direction: 1 });
+		assert.deepStrictEqual(parseTerminalMouseInput("\x1b[M 45"), { type: "other" });
+		assert.equal(parseTerminalMouseInput("not mouse input"), undefined);
+	});
+});
 
 describe("normalizeAppleTerminalInput", () => {
 	it("rewrites Apple Terminal Return to CSI-u Shift+Enter when Shift is pressed", () => {
