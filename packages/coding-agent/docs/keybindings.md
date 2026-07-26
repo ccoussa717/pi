@@ -122,6 +122,10 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 | `app.message.copy` | `ctrl+x` | Copy the last assistant message, or the selected message in `/tree` |
 | `app.message.followUp` | `alt+enter` | Queue follow-up message |
 | `app.message.dequeue` | `alt+up` | Restore queued messages to editor |
+| `app.transcript.pageUp` | `pageUp` | Scroll the transcript up one page when the editor is empty |
+| `app.transcript.pageDown` | `pageDown` | Scroll the transcript down one page when the editor is empty |
+| `app.transcript.home` | `home` | Scroll to the first transcript line when the editor is empty |
+| `app.transcript.end` | `end` | Resume following live transcript output when the editor is empty |
 
 ### Tree Navigation
 

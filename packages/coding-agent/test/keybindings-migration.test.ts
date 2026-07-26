@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
+import { KEYBINDINGS, KeybindingsManager } from "../src/core/keybindings.ts";
 import { runMigrations } from "../src/migrations.ts";
 
 describe("keybindings migration", () => {
@@ -84,5 +84,12 @@ describe("keybindings migration", () => {
 		const effective = keybindings.getEffectiveConfig();
 		expect(effective["tui.select.confirm"]).toBe("enter");
 		expect(effective["app.interrupt"]).toBe("ctrl+x");
+	});
+
+	it("provides configurable transcript navigation keys", () => {
+		expect(KEYBINDINGS["app.transcript.pageUp"].defaultKeys).toBe("pageUp");
+		expect(KEYBINDINGS["app.transcript.pageDown"].defaultKeys).toBe("pageDown");
+		expect(KEYBINDINGS["app.transcript.home"].defaultKeys).toBe("home");
+		expect(KEYBINDINGS["app.transcript.end"].defaultKeys).toBe("end");
 	});
 });

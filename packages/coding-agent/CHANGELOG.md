@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a terminal-height-aware interactive viewport with a fixed composer/footer, independent transcript navigation, tail following, and safe image clipping.
+
+### Changed
+
+- Changed standard user messages to use a width-safe accent rail while preserving OSC 133 prompt markers.
+
 ## [0.82.1] - 2026-07-25
 
 ### New Features
