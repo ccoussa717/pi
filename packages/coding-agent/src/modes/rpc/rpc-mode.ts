@@ -17,6 +17,7 @@ import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
+	SidebarExtensionState,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
 import {
@@ -34,6 +35,8 @@ import type {
 	RpcExtensionUIResponse,
 	RpcResponse,
 	RpcSessionState,
+	RpcSidebarSnapshot,
+	RpcSidebarStateUpdated,
 	RpcSlashCommand,
 } from "./rpc-types.ts";
 
@@ -46,6 +49,108 @@ export type {
 	RpcSessionState,
 } from "./rpc-types.ts";
 
+const SIDEBAR_ROW_LIMIT = 100;
+const SIDEBAR_LABEL_LIMIT = 200;
+const SIDEBAR_CONTENT_LIMIT = 500;
+
+function sidebarRecord(value: unknown, label: string): Record<string, unknown> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error(`Invalid sidebar ${label}`);
+	}
+	return value as Record<string, unknown>;
+}
+
+function sidebarRows(value: unknown, label: string): unknown[] {
+	if (!Array.isArray(value) || value.length > SIDEBAR_ROW_LIMIT) {
+		throw new Error(`Invalid sidebar ${label}`);
+	}
+	for (let index = 0; index < value.length; index++) {
+		if (!(index in value)) throw new Error(`Invalid sidebar ${label}`);
+	}
+	return value;
+}
+
+function sidebarString(value: unknown, label: string, limit = SIDEBAR_LABEL_LIMIT): string {
+	if (typeof value !== "string" || value.trim().length === 0) {
+		throw new Error(`Invalid sidebar ${label}`);
+	}
+	return value.trim().slice(0, limit);
+}
+
+function optionalSidebarString(value: unknown, label: string): string | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "string") throw new Error(`Invalid sidebar ${label}`);
+	return value.trim().slice(0, SIDEBAR_CONTENT_LIMIT) || undefined;
+}
+
+function normalizeSidebarState(value: unknown): SidebarExtensionState {
+	const state = sidebarRecord(value, "state");
+	const mcp = sidebarRows(state.mcp, "MCP rows").map((value) => {
+		const row = sidebarRecord(value, "MCP row");
+		const status = sidebarString(row.status, "MCP status");
+		if (!["connected", "connecting", "disconnected", "disabled", "failed"].includes(status)) {
+			throw new Error("Invalid sidebar MCP status");
+		}
+		const transport = optionalSidebarString(row.transport, "MCP transport");
+		if (transport !== undefined && !["stdio", "http", "sse"].includes(transport)) {
+			throw new Error("Invalid sidebar MCP transport");
+		}
+		if (
+			row.toolCount !== undefined &&
+			(typeof row.toolCount !== "number" || !Number.isSafeInteger(row.toolCount) || row.toolCount < 0)
+		) {
+			throw new Error("Invalid sidebar MCP tool count");
+		}
+		const error = optionalSidebarString(row.error, "MCP error");
+		return {
+			name: sidebarString(row.name, "MCP name"),
+			status: status as SidebarExtensionState["mcp"][number]["status"],
+			...(error === undefined ? {} : { error }),
+			...(row.toolCount === undefined ? {} : { toolCount: row.toolCount }),
+			...(transport === undefined ? {} : { transport: transport as "stdio" | "http" | "sse" }),
+		};
+	});
+	const lspState = sidebarRecord(state.lsp, "LSP state");
+	if (typeof lspState.supported !== "boolean" || typeof lspState.enabled !== "boolean") {
+		throw new Error("Invalid sidebar LSP flags");
+	}
+	const lspItems = sidebarRows(lspState.items, "LSP rows").map((value) => {
+		const row = sidebarRecord(value, "LSP row");
+		const status = sidebarString(row.status, "LSP status");
+		if (!["connected", "error", "unavailable"].includes(status)) {
+			throw new Error("Invalid sidebar LSP status");
+		}
+		const error = optionalSidebarString(row.error, "LSP error");
+		return {
+			id: sidebarString(row.id, "LSP id"),
+			root: sidebarString(row.root, "LSP root"),
+			status: status as SidebarExtensionState["lsp"]["items"][number]["status"],
+			...(error === undefined ? {} : { error }),
+		};
+	});
+	const todos = sidebarRows(state.todos, "todo rows").map((value) => {
+		const row = sidebarRecord(value, "todo row");
+		const status = sidebarString(row.status, "todo status");
+		const priority = sidebarString(row.priority, "todo priority");
+		if (!["pending", "in_progress", "completed", "cancelled"].includes(status)) {
+			throw new Error("Invalid sidebar todo status");
+		}
+		if (!["high", "medium", "low"].includes(priority)) {
+			throw new Error("Invalid sidebar todo priority");
+		}
+		return {
+			content: sidebarString(row.content, "todo content", SIDEBAR_CONTENT_LIMIT),
+			status: status as SidebarExtensionState["todos"][number]["status"],
+			priority: priority as SidebarExtensionState["todos"][number]["priority"],
+		};
+	});
+	return {
+		mcp,
+		lsp: { supported: lspState.supported, enabled: lspState.enabled, items: lspItems },
+		todos,
+	};
+}
+
 /**
  * Run in RPC mode.
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
@@ -55,9 +160,36 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
+	let sidebarGeneration = 0;
+	let sidebarState: SidebarExtensionState = {
+		mcp: [],
+		lsp: { supported: false, enabled: false, items: [] },
+		todos: [],
+	};
 
-	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
+	const output = (obj: RpcResponse | RpcExtensionUIRequest | RpcSidebarStateUpdated | object) => {
 		writeRawStdout(serializeJsonLine(obj));
+	};
+
+	const getSidebarSnapshot = (): RpcSidebarSnapshot => {
+		const stats = session.getSessionStats();
+		const usage = stats.contextUsage;
+		return {
+			sessionId: session.sessionId,
+			context: {
+				tokens: usage?.tokens ?? null,
+				contextWindow: usage?.contextWindow ?? null,
+				percent: usage?.percent ?? null,
+				cost: stats.cost,
+			},
+			mcp: sidebarState.mcp.map((item) => ({ ...item })),
+			lsp: { ...sidebarState.lsp, items: sidebarState.lsp.items.map((item) => ({ ...item })) },
+			todos: sidebarState.todos.map((item) => ({ ...item })),
+		};
+	};
+
+	const publishSidebarSnapshot = (): void => {
+		output({ type: "sidebar_state_updated", data: getSidebarSnapshot() });
 	};
 
 	const success = <T extends RpcCommand["type"]>(
@@ -132,7 +264,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	/**
 	 * Create an extension UI context that uses the RPC protocol.
 	 */
-	const createExtensionUIContext = (): ExtensionUIContext => ({
+	const createExtensionUIContext = (generation: number): ExtensionUIContext => ({
 		select: (title, options, opts) =>
 			createDialogPromise(opts, undefined, { method: "select", title, options, timeout: opts?.timeout }, (r) =>
 				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
@@ -173,6 +305,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				statusKey: key,
 				statusText: text,
 			} as RpcExtensionUIRequest);
+		},
+
+		setSidebarState(state: SidebarExtensionState): void {
+			if (generation !== sidebarGeneration) return;
+			sidebarState = normalizeSidebarState(state);
+			publishSidebarSnapshot();
 		},
 
 		setWorkingMessage(_message?: string): void {
@@ -315,8 +453,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
+		const generation = ++sidebarGeneration;
+		sidebarState = {
+			mcp: [],
+			lsp: { supported: false, enabled: false, items: [] },
+			todos: [],
+		};
 		await session.bindExtensions({
-			uiContext: createExtensionUIContext(),
+			uiContext: createExtensionUIContext(generation),
 			mode: "rpc",
 			commandContextActions: {
 				waitForIdle: () => session.waitForIdle(),
@@ -338,7 +482,18 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					return runtimeHost.switchSession(sessionPath, options);
 				},
 				reload: async () => {
-					await session.reload();
+					await session.reload({
+						beforeSessionStart: () => {
+							const generation = ++sidebarGeneration;
+							sidebarState = {
+								mcp: [],
+								lsp: { supported: false, enabled: false, items: [] },
+								todos: [],
+							};
+							session.extensionRunner.setUIContext(createExtensionUIContext(generation), "rpc");
+							publishSidebarSnapshot();
+						},
+					});
 				},
 			},
 			shutdownHandler: () => {
@@ -348,11 +503,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
 			},
 		});
+		publishSidebarSnapshot();
 
 		unsubscribe?.();
 		unsubscribeBackpressure?.();
 		unsubscribe = session.subscribe((event) => {
 			output(event);
+			if (event.type === "agent_settled" || event.type === "compaction_end") {
+				publishSidebarSnapshot();
+			}
 			if (event.type === "agent_settled") {
 				void checkShutdownRequested();
 			}
@@ -431,8 +590,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "new_session": {
 				const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
+				const previousSession = session;
 				const result = await runtimeHost.newSession(options);
-				if (!result.cancelled) {
+				if (!result.cancelled && session === previousSession) {
 					await rebindSession();
 				}
 				return success(id, "new_session", result);
@@ -460,6 +620,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "get_state", state);
 			}
 
+			case "get_sidebar_state": {
+				return success(id, "get_sidebar_state", getSidebarSnapshot());
+			}
+
 			// =================================================================
 			// Model
 			// =================================================================
@@ -471,6 +635,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					return error(id, "set_model", `Model not found: ${command.provider}/${command.modelId}`);
 				}
 				await session.setModel(model);
+				publishSidebarSnapshot();
 				return success(id, "set_model", model);
 			}
 
@@ -479,6 +644,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!result) {
 					return success(id, "cycle_model", null);
 				}
+				publishSidebarSnapshot();
 				return success(id, "cycle_model", result);
 			}
 
@@ -583,16 +749,18 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "switch_session": {
+				const previousSession = session;
 				const result = await runtimeHost.switchSession(command.sessionPath);
-				if (!result.cancelled) {
+				if (!result.cancelled && session === previousSession) {
 					await rebindSession();
 				}
 				return success(id, "switch_session", result);
 			}
 
 			case "fork": {
+				const previousSession = session;
 				const result = await runtimeHost.fork(command.entryId);
-				if (!result.cancelled) {
+				if (!result.cancelled && session === previousSession) {
 					await rebindSession();
 				}
 				return success(id, "fork", { text: result.selectedText, cancelled: result.cancelled });
@@ -603,8 +771,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!leafId) {
 					return error(id, "clone", "Cannot clone session: no current entry selected");
 				}
+				const previousSession = session;
 				const result = await runtimeHost.fork(leafId, { position: "at" });
-				if (!result.cancelled) {
+				if (!result.cancelled && session === previousSession) {
 					await rebindSession();
 				}
 				return success(id, "clone", { cancelled: result.cancelled });

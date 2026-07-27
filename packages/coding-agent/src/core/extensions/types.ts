@@ -146,6 +146,9 @@ export interface ExtensionUIContext {
 	/** Set status text in the footer/status bar. Pass undefined to clear. */
 	setStatus(key: string, text: string | undefined): void;
 
+	/** Publish the complete structured state used by RPC sidebar clients. */
+	setSidebarState?(state: SidebarExtensionState): void;
+
 	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
 	setWorkingMessage(message?: string): void;
 
@@ -278,6 +281,31 @@ export interface ExtensionUIContext {
 
 	/** Set tool output expansion state. */
 	setToolsExpanded(expanded: boolean): void;
+}
+
+export interface SidebarExtensionState {
+	mcp: Array<{
+		name: string;
+		status: "connected" | "connecting" | "disconnected" | "disabled" | "failed";
+		error?: string;
+		toolCount?: number;
+		transport?: "stdio" | "http" | "sse";
+	}>;
+	lsp: {
+		supported: boolean;
+		enabled: boolean;
+		items: Array<{
+			id: string;
+			root: string;
+			status: "connected" | "error" | "unavailable";
+			error?: string;
+		}>;
+	};
+	todos: Array<{
+		content: string;
+		status: "pending" | "in_progress" | "completed" | "cancelled";
+		priority: "high" | "medium" | "low";
+	}>;
 }
 
 // ============================================================================

@@ -10,6 +10,7 @@ import type { ImageContent, Model } from "@earendil-works/pi-ai";
 import type { SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
+import type { SidebarExtensionState } from "../../core/extensions/types.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 
@@ -27,6 +28,7 @@ export type RpcCommand =
 
 	// State
 	| { id?: string; type: "get_state" }
+	| { id?: string; type: "get_sidebar_state" }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
@@ -107,6 +109,21 @@ export interface RpcSessionState {
 	pendingMessageCount: number;
 }
 
+export interface RpcSidebarSnapshot extends SidebarExtensionState {
+	sessionId: string;
+	context: {
+		tokens: number | null;
+		contextWindow: number | null;
+		percent: number | null;
+		cost: number;
+	};
+}
+
+export interface RpcSidebarStateUpdated {
+	type: "sidebar_state_updated";
+	data: RpcSidebarSnapshot;
+}
+
 // ============================================================================
 // RPC Responses (stdout)
 // ============================================================================
@@ -122,6 +139,7 @@ export type RpcResponse =
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
+	| { id?: string; type: "response"; command: "get_sidebar_state"; success: true; data: RpcSidebarSnapshot }
 
 	// Model
 	| {
