@@ -1311,11 +1311,12 @@ Set or clear a widget (block of text lines) displayed above or below the editor.
   "method": "setWidget",
   "widgetKey": "my-ext",
   "widgetLines": ["--- My Widget ---", "Line 1", "Line 2"],
-  "widgetPlacement": "aboveEditor"
+  "widgetPlacement": "aboveEditor",
+  "widgetData": { "kind": "my-ext.summary", "version": 1, "status": "running" }
 }
 ```
 
-Send `widgetLines: undefined` (or omit it) to clear the widget. The `widgetPlacement` field is `"aboveEditor"` (default) or `"belowEditor"`. Only string arrays are supported in RPC mode; component factories are ignored.
+Send `widgetLines: undefined` (or omit it) to clear the widget. The `widgetPlacement` field is `"aboveEditor"` (default) or `"belowEditor"`. `widgetData` is an optional JSON-safe enhancement for hosts that implement custom widget rendering; hosts must retain `widgetLines` as the fallback. Invalid, cyclic, non-finite, or excessively nested data is omitted without suppressing the line-only event. Only string arrays are supported as widget content in RPC mode; component factories are ignored.
 
 #### setTitle
 

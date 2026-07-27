@@ -4,9 +4,11 @@
 
 ### Added
 
+- Added `--json-events compact` for delta-only streaming updates in JSON print mode while preserving complete terminal messages.
 - Added typed RPC sidebar snapshots with extension-published state and automatic context refresh after agent settlement.
 - Added a terminal-height-aware interactive viewport with a fixed composer/footer, independent transcript navigation, tail following, and safe image clipping.
 - Added mouse and trackpad transcript scrolling with three-row increments, image-safe page navigation, and existing tail-follow behavior.
+- Added optional JSON-safe structured data to RPC extension widget events while preserving string-line fallbacks.
 
 ### Changed
 

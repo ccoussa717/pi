@@ -1,7 +1,7 @@
 import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionShutdownEvent } from "../src/index.ts";
-import { runPrintMode } from "../src/modes/print-mode.ts";
+import type { AgentSessionEvent, AgentSessionEventListener, SessionShutdownEvent } from "../src/index.ts";
+import { type PrintModeOptions, runPrintMode } from "../src/modes/print-mode.ts";
 
 type EmitEvent = SessionShutdownEvent;
 
@@ -16,7 +16,7 @@ type FakeSession = {
 	state: { messages: AssistantMessage[] };
 	extensionRunner: FakeExtensionRunner;
 	bindExtensions: ReturnType<typeof vi.fn>;
-	subscribe: ReturnType<typeof vi.fn>;
+	subscribe: ReturnType<typeof vi.fn<(listener: AgentSessionEventListener) => () => void>>;
 	prompt: ReturnType<typeof vi.fn>;
 	reload: ReturnType<typeof vi.fn>;
 };
@@ -69,7 +69,7 @@ function createRuntimeHost(assistantMessage: AssistantMessage): FakeRuntimeHost 
 		state,
 		extensionRunner,
 		bindExtensions: vi.fn(async () => {}),
-		subscribe: vi.fn(() => () => {}),
+		subscribe: vi.fn((_listener: AgentSessionEventListener) => () => {}),
 		prompt: vi.fn(async () => {}),
 		reload: vi.fn(async () => {}),
 	};
@@ -121,6 +121,51 @@ describe("runPrintMode", () => {
 		expect(session.prompt).toHaveBeenCalledWith("hello");
 		expect(session.extensionRunner.emit).toHaveBeenCalledTimes(1);
 		expect(session.extensionRunner.emit).toHaveBeenCalledWith({ type: "session_shutdown", reason: "quit" });
+	});
+
+	it.each([
+		["default", undefined, { includeSnapshots: true }],
+		["full", "full", { includeSnapshots: true }],
+		["compact", "compact", { includeSnapshots: false }],
+	] as const)("emits %s JSON updates", async (_label, jsonEvents, expectation) => {
+		const runtimeHost = createRuntimeHost(createAssistantMessage({ text: "done" }));
+		const { session } = runtimeHost;
+		const partial = createAssistantMessage({ text: "cumulative" });
+		const event = {
+			type: "message_update",
+			message: partial,
+			assistantMessageEvent: {
+				type: "text_delta",
+				contentIndex: 0,
+				delta: "delta",
+				partial,
+			},
+		} as AgentSessionEvent;
+		const output: string[] = [];
+		const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk, encodingOrCallback, callback) => {
+			output.push(String(chunk));
+			const done = typeof encodingOrCallback === "function" ? encodingOrCallback : callback;
+			done?.();
+			return true;
+		}) as typeof process.stdout.write);
+		session.subscribe.mockImplementation((listener) => {
+			listener(event);
+			return () => {};
+		});
+
+		const printOptions: PrintModeOptions = {
+			mode: "json",
+			messages: ["hello"],
+			...(jsonEvents ? { jsonEvents } : {}),
+		};
+		const exitCode = await runPrintMode(runtimeHost as unknown as Parameters<typeof runPrintMode>[0], printOptions);
+
+		expect(exitCode).toBe(0);
+		const emitted = JSON.parse(output.join("").trim());
+		expect(Boolean(emitted.message)).toBe(expectation.includeSnapshots);
+		expect(Boolean(emitted.assistantMessageEvent.partial)).toBe(expectation.includeSnapshots);
+		expect(emitted.assistantMessageEvent.delta).toBe("delta");
+		stdoutSpy.mockRestore();
 	});
 
 	it("emits session_shutdown and returns non-zero on assistant error", async () => {

@@ -850,6 +850,7 @@ export async function main(args: string[], options?: MainOptions) {
 		printTimings();
 		const exitCode = await runPrintMode(runtime, {
 			mode: toPrintOutputMode(appMode),
+			jsonEvents: parsed.jsonEvents,
 			messages: parsed.messages,
 			initialMessage,
 			initialImages,

@@ -21,6 +21,7 @@ export interface Args {
 	help?: boolean;
 	version?: boolean;
 	mode?: Mode;
+	jsonEvents?: "full" | "compact";
 	name?: string;
 	noSession?: boolean;
 	session?: string;
@@ -79,6 +80,14 @@ export function parseArgs(args: string[]): Args {
 			const mode = args[++i];
 			if (mode === "text" || mode === "json" || mode === "rpc") {
 				result.mode = mode;
+			}
+		} else if (arg === "--json-events") {
+			const jsonEvents = args[i + 1];
+			if (jsonEvents === "full" || jsonEvents === "compact") {
+				result.jsonEvents = jsonEvents;
+				i++;
+			} else {
+				result.diagnostics.push({ type: "error", message: '--json-events must be "full" or "compact"' });
 			}
 		} else if (arg === "--continue" || arg === "-c") {
 			result.continue = true;
@@ -205,6 +214,9 @@ export function parseArgs(args: string[]): Args {
 			result.messages.push(arg);
 		}
 	}
+	if (result.jsonEvents && result.mode !== "json") {
+		result.diagnostics.push({ type: "error", message: "--json-events requires --mode json" });
+	}
 
 	return result;
 }
@@ -241,6 +253,7 @@ ${chalk.bold("Options:")}
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
   --mode <mode>                  Output mode: text (default), json, or rpc
+  --json-events <format>         JSON event format: full (default) or compact
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume

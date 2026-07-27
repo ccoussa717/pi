@@ -102,10 +102,21 @@ export interface ExtensionUIDialogOptions {
 /** Placement for extension widgets. */
 export type WidgetPlacement = "aboveEditor" | "belowEditor";
 
+/** JSON-safe structured data an RPC host may use to enhance a widget. */
+export type ExtensionWidgetData =
+	| null
+	| boolean
+	| number
+	| string
+	| ExtensionWidgetData[]
+	| { [key: string]: ExtensionWidgetData };
+
 /** Options for extension widgets. */
 export interface ExtensionWidgetOptions {
 	/** Where the widget is rendered. Defaults to "aboveEditor". */
 	placement?: WidgetPlacement;
+	/** Optional structured enhancement for RPC hosts. String lines remain the fallback. */
+	data?: ExtensionWidgetData;
 }
 
 /** Raw terminal input listener for extensions. */

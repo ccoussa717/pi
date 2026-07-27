@@ -6,6 +6,14 @@ pi --mode json "Your prompt"
 
 Outputs all session events as JSON lines to stdout. Useful for integrating pi into other tools or custom UIs.
 
+For long-running consumers that reconstruct streaming state from deltas, compact output removes cumulative snapshots from `message_update` events:
+
+```bash
+pi --mode json --json-events compact "Your prompt"
+```
+
+The default `--json-events full` format is unchanged. Compact mode retains `assistantMessageEvent` delta fields, but omits the top-level `message` and `assistantMessageEvent.partial` snapshots from `message_update`. Lifecycle events such as `message_start` and `message_end` remain complete, so consumers can use the terminal message as the authoritative result.
+
 ## Event Types
 
 Events are defined in [`AgentSessionEvent`](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/src/core/agent-session.ts#L102):
@@ -77,6 +85,12 @@ Followed by events as they occur:
 {"type":"message_end","message":{...}}
 {"type":"turn_end","message":{...},"toolResults":[]}
 {"type":"agent_end","messages":[...]}
+```
+
+With `--json-events compact`, the update in this example is emitted as:
+
+```json
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Hello",...}}
 ```
 
 ## Example

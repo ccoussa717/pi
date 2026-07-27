@@ -16,6 +16,7 @@ import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionWidgetData,
 	ExtensionWidgetOptions,
 	SidebarExtensionState,
 	WorkingIndicatorOptions,
@@ -39,6 +40,56 @@ import type {
 	RpcSidebarStateUpdated,
 	RpcSlashCommand,
 } from "./rpc-types.ts";
+
+type NormalizedWidgetData = { ok: true; value: ExtensionWidgetData } | { ok: false };
+
+function normalizeWidgetData(
+	value: unknown,
+	depth = 0,
+	ancestors = new Set<object>(),
+	state = { nodes: 0 },
+): NormalizedWidgetData {
+	state.nodes++;
+	if (depth > 64 || state.nodes > 10_000) return { ok: false };
+	if (value === null || typeof value === "string" || typeof value === "boolean") {
+		return { ok: true, value };
+	}
+	if (typeof value === "number") {
+		return Number.isFinite(value) ? { ok: true, value } : { ok: false };
+	}
+	if (typeof value !== "object" || ancestors.has(value)) return { ok: false };
+
+	try {
+		ancestors.add(value);
+		if (Array.isArray(value)) {
+			const copy: ExtensionWidgetData[] = [];
+			for (const item of value) {
+				const normalized = normalizeWidgetData(item, depth + 1, ancestors, state);
+				if (!normalized.ok) return normalized;
+				copy.push(normalized.value);
+			}
+			return { ok: true, value: copy };
+		}
+		const prototype = Object.getPrototypeOf(value);
+		if (prototype !== Object.prototype && prototype !== null) return { ok: false };
+		const copy: Record<string, ExtensionWidgetData> = {};
+		for (const key of Object.keys(value)) {
+			const normalized = normalizeWidgetData((value as Record<string, unknown>)[key], depth + 1, ancestors, state);
+			if (!normalized.ok) return normalized;
+			Object.defineProperty(copy, key, {
+				value: normalized.value,
+				enumerable: true,
+				configurable: true,
+				writable: true,
+			});
+		}
+		return { ok: true, value: copy };
+	} catch {
+		return { ok: false };
+	} finally {
+		ancestors.delete(value);
+	}
+}
 
 // Re-export types for consumers
 export type {
@@ -332,6 +383,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
 			// Only support string arrays in RPC mode - factory functions are ignored
 			if (content === undefined || Array.isArray(content)) {
+				const widgetData = normalizeWidgetData(options?.data);
 				output({
 					type: "extension_ui_request",
 					id: crypto.randomUUID(),
@@ -339,6 +391,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					widgetKey: key,
 					widgetLines: content as string[] | undefined,
 					widgetPlacement: options?.placement,
+					...(widgetData.ok ? { widgetData: widgetData.value } : {}),
 				} as RpcExtensionUIRequest);
 			}
 			// Component factories are not supported in RPC mode - would need TUI access

@@ -1,8 +1,62 @@
 import { Readable } from "node:stream";
 import { describe, expect, test } from "vitest";
+import { compactJsonEvent } from "../src/modes/print-mode.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "../src/modes/rpc/jsonl.ts";
 
 describe("RPC JSONL framing", () => {
+	test("compact print events retain deltas without cumulative assistant snapshots", () => {
+		const partial = {
+			role: "assistant",
+			content: [{ type: "text", text: "a long cumulative answer" }],
+		};
+		const event = {
+			type: "message_update",
+			message: partial,
+			assistantMessageEvent: {
+				type: "text_delta",
+				contentIndex: 0,
+				delta: "answer",
+				partial,
+			},
+		};
+
+		expect(compactJsonEvent(event)).toEqual({
+			type: "message_update",
+			assistantMessageEvent: {
+				type: "text_delta",
+				contentIndex: 0,
+				delta: "answer",
+			},
+		});
+	});
+
+	test("compact print events leave terminal messages intact", () => {
+		const event = {
+			type: "message_end",
+			message: { role: "assistant", content: [{ type: "text", text: "complete" }] },
+		};
+		expect(compactJsonEvent(event)).toBe(event);
+	});
+
+	test("compact print event volume scales with deltas rather than cumulative snapshots", () => {
+		let text = "";
+		let fullBytes = 0;
+		let compactBytes = 0;
+		for (let i = 0; i < 1000; i++) {
+			text += "streaming output ";
+			const partial = { role: "assistant", content: [{ type: "text", text }] };
+			const event = {
+				type: "message_update",
+				message: partial,
+				assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "streaming output ", partial },
+			};
+			fullBytes += Buffer.byteLength(JSON.stringify(event));
+			compactBytes += Buffer.byteLength(JSON.stringify(compactJsonEvent(event)));
+		}
+
+		expect(compactBytes).toBeLessThan(fullBytes / 100);
+	});
+
 	test("serializes strict JSONL records without escaping Unicode separators", () => {
 		const line = serializeJsonLine({ text: "a\u2028b\u2029c" });
 

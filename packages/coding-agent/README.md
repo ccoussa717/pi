@@ -540,6 +540,7 @@ pi config                    # Enable/disable package resources
 | (default) | Interactive mode |
 | `-p`, `--print` | Print response and exit |
 | `--mode json` | Output all events as JSON lines (see [docs/json.md](docs/json.md)) |
+| `--mode json --json-events compact` | Output delta-only streaming updates with complete terminal messages |
 | `--mode rpc` | RPC mode for process integration (see [docs/rpc.md](docs/rpc.md)) |
 | `--export <in> [out]` | Export session to HTML |
 
