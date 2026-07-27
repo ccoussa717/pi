@@ -53,6 +53,7 @@ interface ExtensionUIRequest {
 	statusText?: string;
 	widgetKey?: string;
 	widgetLines?: string[];
+	widgetData?: unknown;
 	text?: string;
 }
 

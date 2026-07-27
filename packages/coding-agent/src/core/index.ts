@@ -56,6 +56,7 @@ export {
 	ExtensionRunner,
 	type ExtensionShortcut,
 	type ExtensionUIContext,
+	type ExtensionWidgetData,
 	type InlineExtension,
 	type LoadExtensionsResult,
 	type MessageRenderer,

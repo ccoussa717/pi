@@ -2559,6 +2559,10 @@ ctx.ui.setWorkingIndicator();  // Restore default spinner
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
 // Widget below editor
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "belowEditor" });
+// Optional JSON-safe enhancement for RPC hosts; lines remain the fallback
+ctx.ui.setWidget("my-widget", ["Running"], {
+  data: { kind: "my-extension.status", version: 1, status: "running" },
+});
 ctx.ui.setWidget("my-widget", (tui, theme) => new Text(theme.fg("accent", "Custom"), 0, 0));
 ctx.ui.setWidget("my-widget", undefined);  // Clear
 
