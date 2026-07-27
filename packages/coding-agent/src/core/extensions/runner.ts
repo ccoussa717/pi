@@ -237,6 +237,7 @@ const noOpUIContext: ExtensionUIContext = {
 	notify: () => {},
 	onTerminalInput: () => () => {},
 	setStatus: () => {},
+	setSidebarState: () => {},
 	setWorkingMessage: () => {},
 	setWorkingVisible: () => {},
 	setWorkingIndicator: () => {},

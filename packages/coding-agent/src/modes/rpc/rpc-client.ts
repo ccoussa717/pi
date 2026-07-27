@@ -12,7 +12,14 @@ import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
-import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.ts";
+import type {
+	RpcCommand,
+	RpcResponse,
+	RpcSessionState,
+	RpcSidebarSnapshot,
+	RpcSidebarStateUpdated,
+	RpcSlashCommand,
+} from "./rpc-types.ts";
 
 // ============================================================================
 // Types
@@ -46,7 +53,7 @@ export interface ModelInfo {
 	reasoning: boolean;
 }
 
-export type RpcEventListener = (event: AgentSessionEvent) => void;
+export type RpcEventListener = (event: AgentSessionEvent | RpcSidebarStateUpdated) => void;
 
 // ============================================================================
 // RPC Client
@@ -234,6 +241,14 @@ export class RpcClient {
 	 */
 	async getState(): Promise<RpcSessionState> {
 		const response = await this.send({ type: "get_state" });
+		return this.getData(response);
+	}
+
+	/**
+	 * Get the complete sidebar snapshot for the active session.
+	 */
+	async getSidebarState(): Promise<RpcSidebarSnapshot> {
+		const response = await this.send({ type: "get_sidebar_state" });
 		return this.getData(response);
 	}
 
@@ -481,6 +496,7 @@ export class RpcClient {
 			}, timeout);
 
 			const unsubscribe = this.onEvent((event) => {
+				if (event.type === "sidebar_state_updated") return;
 				events.push(event);
 				if (event.type === "agent_settled") {
 					clearTimeout(timer);

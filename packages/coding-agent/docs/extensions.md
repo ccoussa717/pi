@@ -945,6 +945,12 @@ Current run mode: `"tui"`, `"rpc"`, `"json"`, or `"print"`. Use `ctx.mode === "t
 
 `true` in TUI and RPC modes. `false` in print mode (`-p`) and JSON mode. Use this to guard dialog methods (`select`, `confirm`, `input`, `editor`) and fire-and-forget methods (`notify`, `setStatus`, `setWidget`, `setTitle`, `setEditorText`) that work in both TUI and RPC modes. In RPC mode, some TUI-specific methods are no-ops or return defaults (see [rpc.md](rpc.md#extension-ui-protocol)).
 
+RPC-backed distributions can also expose `ctx.ui.setSidebarState()`. The method
+atomically publishes bounded MCP, LSP, and todo sections; the runtime adds the
+active session id, context usage, and cost. It is optional because standard Pi
+interactive, print, and JSON hosts do not provide a structured sidebar. See
+[`get_sidebar_state`](rpc.md#get_sidebar_state) for the complete contract.
+
 ### ctx.cwd
 
 Current working directory.

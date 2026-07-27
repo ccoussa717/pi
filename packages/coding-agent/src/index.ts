@@ -125,6 +125,7 @@ export type {
 	SessionShutdownEvent,
 	SessionStartEvent,
 	SessionTreeEvent,
+	SidebarExtensionState,
 	SlashCommandInfo,
 	SlashCommandSource,
 	SourceInfo,
@@ -339,6 +340,8 @@ export {
 	type RpcExtensionUIResponse,
 	type RpcResponse,
 	type RpcSessionState,
+	type RpcSidebarSnapshot,
+	type RpcSidebarStateUpdated,
 	runPrintMode,
 	runRpcMode,
 } from "./modes/index.ts";

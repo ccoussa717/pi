@@ -12,4 +12,6 @@ export type {
 	RpcExtensionUIResponse,
 	RpcResponse,
 	RpcSessionState,
+	RpcSidebarSnapshot,
+	RpcSidebarStateUpdated,
 } from "./rpc/rpc-types.ts";

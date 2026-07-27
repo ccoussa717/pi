@@ -159,6 +159,40 @@ If an extension cancelled:
 
 ### State
 
+#### get_sidebar_state
+
+Return the complete sidebar snapshot for the active session. The runtime owns
+the session id, context usage, and accumulated cost. Extensions publish the MCP,
+LSP, and todo sections through `ctx.ui.setSidebarState()`.
+
+```json
+{"id":"sidebar-1","type":"get_sidebar_state"}
+```
+
+Response:
+
+```json
+{
+  "id": "sidebar-1",
+  "type": "response",
+  "command": "get_sidebar_state",
+  "success": true,
+  "data": {
+    "sessionId": "session-id",
+    "context": {"tokens": 1200, "contextWindow": 200000, "percent": 0.6, "cost": 0.01},
+    "mcp": [],
+    "lsp": {"supported": false, "enabled": false, "items": []},
+    "todos": []
+  }
+}
+```
+
+The runtime emits `sidebar_state_updated` with the same complete `data` shape
+when an extension replaces sidebar state, after session replacement, after
+agent settlement, after compaction, and after an RPC model change. Clients must
+replace their prior snapshot rather than merging rows and must reject snapshots
+for a different session id.
+
 #### get_state
 
 Get current session state.
@@ -852,6 +886,7 @@ Events are streamed to stdout as JSON lines during agent operation. Events do no
 | `queue_update` | Pending steering/follow-up queue changed |
 | `compaction_start` | Compaction begins |
 | `compaction_end` | Compaction completes |
+| `sidebar_state_updated` | Complete sidebar replacement for the active session |
 | `auto_retry_start` | Auto-retry begins (after transient error) |
 | `auto_retry_end` | Auto-retry completes (success or final failure) |
 | `summarization_retry_scheduled` | Retry scheduled for a transient compaction or branch-summary summarization error |
