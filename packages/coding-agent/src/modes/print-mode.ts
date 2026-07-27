@@ -11,12 +11,25 @@ import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
 import { killTrackedDetachedChildren } from "../utils/shell.ts";
 
+export function compactJsonEvent(event: unknown): unknown {
+	if (!event || typeof event !== "object" || Array.isArray(event)) return event;
+	const record = event as Record<string, unknown>;
+	if (record.type !== "message_update") return event;
+	const assistantEvent = record.assistantMessageEvent;
+	if (!assistantEvent || typeof assistantEvent !== "object" || Array.isArray(assistantEvent)) return event;
+	const { message: _message, assistantMessageEvent: _assistantMessageEvent, ...eventRest } = record;
+	const { partial: _partial, ...assistantEventRest } = assistantEvent as Record<string, unknown>;
+	return { ...eventRest, assistantMessageEvent: assistantEventRest };
+}
+
 /**
  * Options for print mode.
  */
 export interface PrintModeOptions {
 	/** Output mode: "text" for final response only, "json" for all events */
 	mode: "text" | "json";
+	/** JSON event payload shape. Compact removes cumulative streaming snapshots. */
+	jsonEvents?: "full" | "compact";
 	/** Array of additional prompts to send after initialMessage */
 	messages?: string[];
 	/** First message to send (may contain @file content) */
@@ -30,7 +43,7 @@ export interface PrintModeOptions {
  * Sends prompts to the agent and outputs the result.
  */
 export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: PrintModeOptions): Promise<number> {
-	const { mode, messages = [], initialMessage, initialImages } = options;
+	const { mode, jsonEvents = "full", messages = [], initialMessage, initialImages } = options;
 	let exitCode = 0;
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
@@ -103,7 +116,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		unsubscribe?.();
 		unsubscribe = session.subscribe((event) => {
 			if (mode === "json") {
-				writeRawStdout(`${JSON.stringify(event)}\n`);
+				writeRawStdout(`${JSON.stringify(jsonEvents === "compact" ? compactJsonEvent(event) : event)}\n`);
 			}
 		});
 	};

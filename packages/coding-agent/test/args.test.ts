@@ -125,6 +125,36 @@ describe("parseArgs", () => {
 			expect(result.mode).toBe("rpc");
 		});
 
+		test("parses compact JSON event output", () => {
+			const result = parseArgs(["--mode", "json", "--json-events", "compact"]);
+			expect(result.jsonEvents).toBe("compact");
+		});
+
+		test("rejects invalid JSON event output", () => {
+			const result = parseArgs(["--mode", "json", "--json-events", "verbose"]);
+			expect(result.jsonEvents).toBeUndefined();
+			expect(result.diagnostics).toContainEqual({
+				type: "error",
+				message: '--json-events must be "full" or "compact"',
+			});
+		});
+
+		test("requires JSON mode for JSON event output", () => {
+			const result = parseArgs(["--json-events", "compact"]);
+			expect(result.diagnostics).toContainEqual({
+				type: "error",
+				message: "--json-events requires --mode json",
+			});
+		});
+
+		test("rejects a missing JSON event output value", () => {
+			const result = parseArgs(["--mode", "json", "--json-events"]);
+			expect(result.diagnostics).toContainEqual({
+				type: "error",
+				message: '--json-events must be "full" or "compact"',
+			});
+		});
+
 		test("parses --session", () => {
 			const result = parseArgs(["--session", "/path/to/session.jsonl"]);
 			expect(result.session).toBe("/path/to/session.jsonl");
