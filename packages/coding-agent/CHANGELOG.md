@@ -15,6 +15,10 @@
 - Changed standard user messages to use a width-safe accent rail while preserving OSC 133 prompt markers.
 - Changed collapsed thinking blocks to show concise model activity metadata while keeping the full reasoning hidden until expanded.
 
+### Fixed
+
+- Fixed RPC hosts retaining extension dialogs after an abort signal or timeout resolves the pending request.
+
 ## [0.82.1] - 2026-07-25
 
 ### New Features

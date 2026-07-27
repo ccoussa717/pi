@@ -1182,9 +1182,9 @@ Extensions can request user interaction via `ctx.ui.select()`, `ctx.ui.confirm()
 There are two categories of extension UI methods:
 
 - **Dialog methods** (`select`, `confirm`, `input`, `editor`): emit an `extension_ui_request` on stdout and block until the client sends back an `extension_ui_response` on stdin with the matching `id`.
-- **Fire-and-forget methods** (`notify`, `setStatus`, `setWidget`, `setTitle`, `set_editor_text`): emit an `extension_ui_request` on stdout but do not expect a response. The client can display the information or ignore it.
+- **Fire-and-forget methods** (`close`, `notify`, `setStatus`, `setWidget`, `setTitle`, `set_editor_text`): emit an `extension_ui_request` on stdout but do not expect a response. The client can display the information or ignore it.
 
-If a dialog method includes a `timeout` field, the agent-side will auto-resolve with a default value when the timeout expires. The client does not need to track timeouts.
+If a dialog method includes a `timeout` field, the agent-side will auto-resolve with a default value when the timeout expires. When a timeout or abort signal resolves a pending dialog without client input, the agent emits a matching `close` request so the client can dismiss it.
 
 Some `ExtensionUIContext` methods are not supported or degraded in RPC mode because they require direct TUI access:
 - `custom()` returns `undefined`
@@ -1200,7 +1200,7 @@ Note: `ctx.mode` is `"rpc"` and `ctx.hasUI` is `true` in RPC mode because the di
 
 ### Extension UI Requests (stdout)
 
-All requests have `type: "extension_ui_request"`, a unique `id`, and a `method` field.
+All requests have `type: "extension_ui_request"`, an `id`, and a `method` field. New dialogs use unique IDs; `close` reuses the dialog ID it dismisses. Clients should ignore unknown future fire-and-forget methods.
 
 #### select
 
@@ -1267,6 +1267,18 @@ Open a multi-line text editor with optional prefilled content.
 ```
 
 Expected response: `extension_ui_response` with `value` (the edited text) or `cancelled: true`.
+
+#### close
+
+Dismiss a previously emitted dialog after its timeout or abort signal resolves agent-side. Fire-and-forget; the `id` matches the original dialog request.
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "uuid-3",
+  "method": "close"
+}
+```
 
 #### notify
 

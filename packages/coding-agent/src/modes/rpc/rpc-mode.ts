@@ -280,6 +280,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 		const id = crypto.randomUUID();
 		return new Promise((resolve, reject) => {
+			if (opts?.signal?.aborted) {
+				resolve(defaultValue);
+				return;
+			}
 			let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
 			const cleanup = () => {
@@ -290,6 +294,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			const onAbort = () => {
 				cleanup();
+				output({ type: "extension_ui_request", id, method: "close" } as RpcExtensionUIRequest);
 				resolve(defaultValue);
 			};
 			opts?.signal?.addEventListener("abort", onAbort, { once: true });
@@ -297,6 +302,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			if (opts?.timeout) {
 				timeoutId = setTimeout(() => {
 					cleanup();
+					output({ type: "extension_ui_request", id, method: "close" } as RpcExtensionUIRequest);
 					resolve(defaultValue);
 				}, opts.timeout);
 			}
