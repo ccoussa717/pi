@@ -124,13 +124,14 @@ async function* createCompletedEvents(): AsyncIterable<ResponseStreamEvent> {
 	} as unknown as ResponseStreamEvent;
 }
 
-async function* createIncompleteEvents(): AsyncIterable<ResponseStreamEvent> {
+async function* createIncompleteEvents(reason = "max_output_tokens"): AsyncIterable<ResponseStreamEvent> {
 	yield {
 		type: "response.incomplete",
 		sequence_number: 0,
 		response: {
 			id: "resp_incomplete",
 			status: "incomplete",
+			incomplete_details: { reason },
 			usage: {
 				input_tokens: 30,
 				output_tokens: 12,
@@ -219,6 +220,28 @@ describe("OpenAI Responses terminal event handling", () => {
 			cacheWrite: 0,
 			totalTokens: 42,
 		});
+	});
+
+	it("finalizes content-filtered incomplete responses as non-retryable errors", async () => {
+		const model = createModel();
+		const output = createOutput(model);
+		const stream = new AssistantMessageEventStream();
+
+		await processResponsesStream(createIncompleteEvents("content_filter"), output, stream, model);
+
+		expect(output.stopReason).toBe("error");
+		expect(output.errorMessage).toBe("Response incomplete: content_filter");
+	});
+
+	it("preserves unknown provider incomplete reasons as non-retryable errors", async () => {
+		const model = createModel();
+		const output = createOutput(model);
+		const stream = new AssistantMessageEventStream();
+
+		await processResponsesStream(createIncompleteEvents("max_time_limit"), output, stream, model);
+
+		expect(output.stopReason).toBe("error");
+		expect(output.errorMessage).toBe("Response incomplete: max_time_limit");
 	});
 
 	it("rejects failed terminal events with the provider error", async () => {

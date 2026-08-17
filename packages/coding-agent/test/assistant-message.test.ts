@@ -61,7 +61,7 @@ describe("AssistantMessageComponent", () => {
 		expect(rendered.includes(OSC133_ZONE_FINAL)).toBe(false);
 	});
 
-	test("renders length stops as visible errors", () => {
+	test("renders length stops with neutral truncation wording", () => {
 		initTheme("dark");
 
 		const component = new AssistantMessageComponent(
@@ -72,8 +72,7 @@ describe("AssistantMessageComponent", () => {
 
 		expect(rendered).toContain("Thinking: gpt-4o-mini");
 		expect(rendered).not.toContain("private reasoning");
-		expect(rendered).toContain("maximum output token limit");
-		expect(rendered).toContain("response may be incomplete");
+		expect(rendered).toContain("Response was truncated before completion.");
 	});
 
 	test("coalesces adjacent thinking blocks into one hidden thinking label", () => {
