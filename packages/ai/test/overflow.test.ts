@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AssistantMessage } from "../src/types.ts";
-import { isContextOverflow } from "../src/utils/overflow.ts";
+import { isContextOverflow, isRecoverableLength } from "../src/utils/overflow.ts";
 
 function createErrorMessage(errorMessage: string): AssistantMessage {
 	return {
@@ -135,5 +135,15 @@ describe("isContextOverflow", () => {
 	it("does not treat length stops far below context as overflow", () => {
 		const message = createLengthStopMessage(100, 0, 0);
 		expect(isContextOverflow(message, 200000)).toBe(false);
+	});
+
+	it("treats a nonzero partial length stop as recoverable", () => {
+		const message = createLengthStopMessage(28920, 0, 1);
+		expect(isRecoverableLength(message, 4096)).toBe(true);
+	});
+
+	it("does not recover a length stop that reached the desired output limit", () => {
+		const message = createLengthStopMessage(1000, 0, 4096);
+		expect(isRecoverableLength(message, 4096)).toBe(false);
 	});
 });

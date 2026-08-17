@@ -161,6 +161,16 @@ export function isContextOverflow(message: AssistantMessage, contextWindow?: num
 }
 
 /**
+ * Check whether a length stop ended below the caller or model's intended output limit.
+ * Such responses may be caused by context pressure or provider-side truncation, so callers
+ * can make one bounded compact-and-retry attempt. `desiredMaxOutput` must be the original
+ * limit before any context-based clamping.
+ */
+export function isRecoverableLength(message: AssistantMessage, desiredMaxOutput: number): boolean {
+	return message.stopReason === "length" && desiredMaxOutput > 0 && message.usage.output < desiredMaxOutput;
+}
+
+/**
  * Get the overflow patterns for testing purposes.
  */
 export function getOverflowPatterns(): RegExp[] {
