@@ -39,7 +39,6 @@ import {
 	cleanupSessionResources,
 	getSupportedThinkingLevels,
 	isContextOverflow,
-	isRecoverableLength,
 	isRetryableAssistantError,
 	modelsAreEqual,
 	type RetryCallbacks,
@@ -1983,7 +1982,12 @@ export class AgentSession {
 		// independent of the configured context size or any context-clamped provider request limit.
 		// A successful response over the configured window should compact but must not retry: the
 		// assistant answer already completed and agent.continue() cannot continue from an assistant.
-		const recoverableLength = sameModel && isRecoverableLength(assistantMessage, this.model?.maxTokens ?? 0);
+		const desiredMaxOutput = this.model?.maxTokens ?? 0;
+		const recoverableLength =
+			sameModel &&
+			assistantMessage.stopReason === "length" &&
+			desiredMaxOutput > 0 &&
+			assistantMessage.usage.output < desiredMaxOutput;
 		if (sameModel && (isContextOverflow(assistantMessage, contextWindow) || recoverableLength)) {
 			const willRetry = assistantMessage.stopReason !== "stop";
 
